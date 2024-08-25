@@ -1,33 +1,107 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, status, HTTPException
+from sqlalchemy.orm import Session
+from app.backend.db_depends import get_db
+from typing import Annotated
+
+from app.models import *
+from sqlalchemy import insert, select, update
+from app.schema import CreateCategory, CreateProduct
+
+from slugify import slugify
 
 router = APIRouter(prefix='/products', tags=['products'])
 
 
 @router.get('/')
-async def all_products():
-    pass
+async def all_products(db: Annotated[Session, Depends(get_db)]):
+    products = db.scalars(select(Product).where(Product.is_active == True, Product.stock > 0)).all()
+    if products:
+        return products
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='No products found')
 
 
 @router.post('/create')
-async def create_product():
-    pass
+async def create_product(db: Annotated[Session, Depends(get_db)], create_product: CreateProduct) -> dict:
+    db.execute(insert(Product).values(
+        name=create_product.name,
+        slug=slugify(create_product.name),
+        description=create_product.description,
+        price=create_product.price,
+        stock=create_product.stock,
+        image_url=create_product.image_url,
+        rating=0.0,
+        category_id=create_product.category
+    ))
+    db.commit()
+    return {
+        'status_code': status.HTTP_201_CREATED,
+        'transaction': 'Successful'
+    }
+
 
 
 @router.get('/{category_slug}')
-async def product_by_category(category_slug: str):
-    pass
+async def product_by_category(db: Annotated[Session, Depends(get_db)], category_slug: str):
+    category = db.scalar(select(Category).where(Category.slug == category_slug))
+    if category is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Category not found')
+
+    subcategories = db.scalars(select(Category).where(Category.parent_id == category.id)).all()
+
+    category_ids = [category.id] + [subcat.id for subcat in subcategories]
+    products = db.scalars(
+        select(Product)
+        .where(
+            Product.category_id.in_(category_ids),
+            Product.is_active == True,
+            Product.stock > 0
+        )
+    ).all()
+
+    return products
 
 
 @router.get('/detail/{product_slug}')
-async def product_detail(product_slug: str):
-    pass
+async def product_detail(db: Annotated[Session, Depends(get_db)], product_slug: str):
+    product = db.scalar(select(Product).where(Product.slug == product_slug))
+    if product:
+        return product
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Product not found')
 
 
 @router.put('/detail/{product_slug}')
-async def update_product(product_slug: str):
-    pass
+async def update_product(db: Annotated[Session, Depends(get_db)],
+                         update_product: CreateProduct, product_slug: str) -> dict:
+    product = db.scalar(select(Category).where(Product.slug == product_slug))
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Product not found')
+
+    db.execute(update(Product).where(Product.slug == product_slug).values(
+        name=update_product.name,
+        slug=slugify(update_product.name),
+        description=update_product.description,
+        price=update_product.price,
+        stock=update_product.stock,
+        image_url=update_product.image_url,
+        category_id=update_product.category
+    ))
+    return {
+        'status_code': status.HTTP_200_OK,
+        'transaction': 'Product updated'
+    }
 
 
 @router.delete('/delete')
-async def delete_product(product_id: int):
-    pass
+async def delete_product(db: Annotated[Session, Depends(get_db)], product_slug: str) -> dict:
+    product = db.scalar(select(Category).where(Product.slug == product_slug))
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail='Product does not exist'
+        )
+    db.execute(update(Product).where(Product.slug == product_slug).values(is_active=False))
+    db.commit()
+    return {
+        'status_code': status.HTTP_204_NO_CONTENT,
+        'transaction': 'Category deleted'
+    }

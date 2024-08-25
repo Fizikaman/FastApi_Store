@@ -7,7 +7,7 @@ class CreateProduct(BaseModel):
     price: int
     image_url: str
     stock: int
-    category: str
+    category: int
 
 
 class CreateCategory(BaseModel):
