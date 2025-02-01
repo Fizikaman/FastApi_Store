@@ -5,10 +5,10 @@ from app.backend.db_depends import get_db
 from typing import Annotated
 
 from app.models import *
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, select
 
 from app.routers.auth import get_current_user
-from app.schema import CreateCategory, CreateProduct
+from app.schema import CreateProduct
 
 from slugify import slugify
 
