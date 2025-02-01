@@ -23,3 +23,5 @@ class Product(Base):
     supplier_id = Column(Integer, ForeignKey('user.id'), nullable=True)
 
     category = relationship('Category', back_populates='products')
+    review = relationship('Review', back_populates='product')
+
