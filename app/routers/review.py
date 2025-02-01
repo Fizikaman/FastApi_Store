@@ -5,17 +5,42 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.backend.db_depends import get_db
-from app.models import Product
+from app.models import Product, User, review
 from app.models.review import Review, Rating
 from app.routers.auth import get_current_user
-from app.schema import CreateReview
+from app.schema import CreateReview, GetAllReviews
 
 router = APIRouter(prefix='/reviews', tags=['reviews'])
 
 
-@router.get('/all_reviews')
+@router.get('/all_reviews', response_model=list[GetAllReviews])
 async def all_reviews(db: Annotated[AsyncSession, Depends(get_db)])
+    """Получение всех отзывов о всех товарах"""
+    result = await db.execute(select(Review.id,
+                               Review.comment,
+                               Review.comment_date,
+                               Review.user_id,
+                               User.username.label('username'),
+                               Product.name.label('name'),
+                               Rating.grade.label('grade')
+                               ).join(Product, Review.product_id == Product.id)
+                                .join(User, Review.user_id == User.id)
+                                .join(Rating, Review.product_id == Product.id))
+    reviews = result.all()
 
+    all_reviews = [
+        GetAllReviews(
+            id=review.id,
+            comment=review.comment,
+            comment_date=review.comment_date,
+            user_id=review.user_id,
+            user_name=review.user_name,
+            product_name=review.product_name,
+            grade=review.grade
+        ) for review in reviews
+    ]
+
+    return all_reviews
 
 
 @router.post('/products/{product_slug}/reviews')
