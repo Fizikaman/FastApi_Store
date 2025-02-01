@@ -127,17 +127,30 @@ async def update_product(db: Annotated[AsyncSession, Depends(get_db)], product_s
         )
 
 
-@router.delete('/delete')
-async def delete_product(db: Annotated[Session, Depends(get_db)], product_slug: str) -> dict:
-    product = await db.scalar(select(Category).where(Product.slug == product_slug))
-    if product is None:
+@router.delete('/')
+async def delete_product(db: Annotated[AsyncSession, Depends(get_db)], product_slug: str,
+                         get_user: Annotated[dict, Depends(get_current_user)]):
+    product_delete = await db.scalar(select(Product).where(Product.slug == product_slug))
+    if product_delete is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail='Product does not exist'
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail='There is no product found'
+             )
+    if get_user.get('is_supplier') or get_user.get('is_admin'):
+        if get_user.get('id') == product_delete.supplier_id or get_user.get('is_admin'):
+            product_delete.is_active = False
+            await db.commit()
+            return {
+                'status_code': status.HTTP_200_OK,
+                'transaction': 'Product delete is successful'
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail='You have not enough permission for this action'
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail='You have not enough permission for this action'
         )
-    await db.execute(update(Product).where(Product.slug == product_slug).values(is_active=False))
-    await db.commit()
-    return {
-        'status_code': status.HTTP_204_NO_CONTENT,
-        'transaction': 'Category deleted'
-    }
