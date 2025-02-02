@@ -8,13 +8,13 @@ from app.backend.db_depends import get_db
 from app.models import Product, User, review
 from app.models.review import Review, Rating
 from app.routers.auth import get_current_user
-from app.schema import CreateReview, GetAllReviews
+from app.schema import CreateReview, GetAllReviews, GetAllProductsReviews
 
 router = APIRouter(prefix='/reviews', tags=['reviews'])
 
 
 @router.get('/all_reviews', response_model=list[GetAllReviews])
-async def all_reviews(db: Annotated[AsyncSession, Depends(get_db)])
+async def all_reviews(db: Annotated[AsyncSession, Depends(get_db)]):
     """Получение всех отзывов о всех товарах"""
     result = await db.execute(select(Review.id,
                                Review.comment,
@@ -43,11 +43,43 @@ async def all_reviews(db: Annotated[AsyncSession, Depends(get_db)])
     return all_reviews
 
 
+@router.get('/products/{product_slug}/reviews', response_model=list[GetAllProductsReviews])
+async def create_review(db: Annotated[AsyncSession, Depends(get_db)], product_slug: str):
+    """Метод получения всех отзывов по определенному товару"""
+    product = db.scalar(select(Product.id).where(Product.slug == product_slug))
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Товар с {product_slug} не найден')
+
+    result = await db.execute(select(Review.id,
+                                     Review.comment,
+                                     Review.comment_date,
+                                     Review.user_id,
+                                     User.username.label('username'),
+                                     Rating.grade.label('grade')
+                                     ).join(User, Review.user_id == User.id)
+                              .join(Rating, Review.product_id == Product.id).where(Review.product_id == product.id))
+    reviews = result.all()
+
+    all_product_reviews = [
+        GetAllProductsReviews(
+            id=item.id,
+            comment=item.comment,
+            comment_date=item.comment_date,
+            user_id=item.user_id,
+            user_name=item.user_name,
+            grade=item.grade
+        ) for item in reviews
+    ]
+
+    return all_product_reviews
+
+
 @router.post('/products/{product_slug}/reviews')
 async def create_review(db: Annotated[AsyncSession, Depends(get_db)],
                         get_user: Annotated[dict, Depends(get_current_user)],
                         product_slug: str,
                         review_data: CreateReview):
+    """Метод для создания отзыва и оценки товара"""
     if not get_user:
         raise HTTPException(detail='Требуется авторизация', status_code=status.HTTP_401_UNAUTHORIZED)
 

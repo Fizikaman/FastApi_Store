@@ -41,3 +41,15 @@ class GetAllReviews(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class GetAllProductsReviews(BaseModel):
+    id: int
+    comment: str | None = None
+    comment_date: datetime
+    user_id: int
+    user_name: str
+    grade: int
+
+    class Config:
+        from_attributes = True
