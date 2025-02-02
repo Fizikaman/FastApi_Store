@@ -46,7 +46,7 @@ async def all_reviews(db: Annotated[AsyncSession, Depends(get_db)]):
 @router.get('/products/{product_slug}/reviews', response_model=list[GetAllProductsReviews])
 async def create_review(db: Annotated[AsyncSession, Depends(get_db)], product_slug: str):
     """Метод получения всех отзывов по определенному товару"""
-    product = db.scalar(select(Product.id).where(Product.slug == product_slug))
+    product = await db.scalar(select(Product.id).where(Product.slug == product_slug))
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Товар с {product_slug} не найден')
 
@@ -127,3 +127,39 @@ async def create_review(db: Annotated[AsyncSession, Depends(get_db)],
                                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return {"message": "Отзыв успешно добавлен", "new_rating": product.rating}
+
+
+@router.delete('/products/{product_slug}/reviews/{review_id}')
+async def delete_product_review(db: Annotated[AsyncSession, Depends(get_db)],
+                                get_user: Annotated[dict, Depends(get_current_user)],
+                                product_slug: str,
+                                review_id: int):
+    if not get_user.get('is_admin'):
+        raise HTTPException(detail='Требуются права админа', status_code=status.HTTP_403_FORBIDDEN)
+
+    product = await db.scalar(select(Product).where(Product.slug == product_slug))
+    product_review = await db.scalar(select(Review).where(Review.product_id == product.id,
+                                                          Review.id == review_id,
+                                                          Review.is_active == True))
+    rating = await db.scalar(select(Rating).where(Rating.review.id == review_id, Rating.is_active == True))
+
+    if not product_review or not rating:
+        raise HTTPException(detail='Отзыв не найден или уже был удален', status_code=status.HTTP_400_BAD_REQUEST)
+
+    async with db.begin():
+        try:
+            product_review.is_active = False
+            rating.is_active = False
+            await db.flush()
+
+            avg_rating = await db.scalar(select(func.avg(Rating.grade)).where(Rating.product_id == product.id,
+                                                                                Rating.is_active == True))
+
+            product.rating = round(avg_rating, 1)
+            await db.commit()
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(detail=f'Произошла ошибка {e}',
+                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    return {'message': 'Отзыв успешно удален'}
